@@ -9,7 +9,6 @@ Bienvenido a la documentación técnica completa del sistema de venta de entrada
 - **Collection de Postman**: [`Request for tickets app.postman_collection.json`](Request%20for%20tickets%20app.postman_collection.json) - Incluye todos los endpoints del API
 - **Diagramas del Sistema**: 
   - [`doc/diagrams.html`](doc/diagrams.html) - Visualización interactiva de diagramas
-  - [`diagrams/system-diagrams.md`](diagrams/system-diagrams.md) - Diagramas en Markdown
 - **Configuración Docker**: [`docker-compose.yml`](docker-compose.yml) - Para levantar el entorno local
 
 ---
