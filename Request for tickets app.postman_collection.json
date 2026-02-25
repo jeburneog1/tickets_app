@@ -1,0 +1,197 @@
+{
+  "info": {
+    "_postman_id": "a00fe24b-25a4-4c8c-adda-f2c78f42368f",
+    "name": "Request for tickets app",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "12709401"
+  },
+  "item": [
+    {
+      "name": "Create event",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"name\": \"Concierto de Diomedez\",\r\n  \"date\": \"2026-12-25T20:00:00\",\r\n  \"location\": \"Estadio Nacional de Colombia\",\r\n  \"totalCapacity\": 123\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:8081/api/events",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8081",
+          "path": [
+            "api",
+            "events"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get event by ID",
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "method": "GET",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:8081/api/events/2fd6dfe8-1406-434f-9f7b-49103f3763ab",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8081",
+          "path": [
+            "api",
+            "events",
+            "2fd6dfe8-1406-434f-9f7b-49103f3763ab"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get all events",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8080/api/events",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "api",
+            "events"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Create ticket order",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"eventId\": \"1f56bd0d-7f37-4f64-b65d-b187631e51df\",\r\n  \"customerId\": \"yisus\",\r\n  \"numberOfTickets\": 10\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:8080/api/orders",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "api",
+            "orders"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get status order by ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8080/api/orders/ca3368f6-5319-45c7-b30a-5fa65025fe52",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "api",
+            "orders",
+            "ca3368f6-5319-45c7-b30a-5fa65025fe52"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Confirm order",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8080/api/orders/438e5305-a799-4aa8-8a89-77cc6f9793f3/confirm",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "api",
+            "orders",
+            "438e5305-a799-4aa8-8a89-77cc6f9793f3",
+            "confirm"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "ComplimentaryTicketRequest",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"eventId\": \"2fd6dfe8-1406-434f-9f7b-49103f3763ab\",\r\n  \"customerId\": \"yisus\",\r\n  \"reason\": \"complimentary\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:8081/api/tickets/complimentary",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8081",
+          "path": [
+            "api",
+            "tickets",
+            "complimentary"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}

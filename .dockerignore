@@ -1,0 +1,64 @@
+# Build artifacts
+build/
+target/
+bin/
+out/
+.gradle/
+.gradle-wrapper/
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.settings/
+.project
+.classpath
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+docs/
+DIAGRAMAS-VISUALES.md
+EXPLICACION-DETALLADA-USE-CASES.md
+FLUJO-CONTROLLERS-COMPLETO.md
+FLUJO-DETALLADO-PROCESS-ORDER.md
+GUIA-MONO-TIPOS.md
+PREGUNTAS-PRESENTACION.md
+README-PLAN-COMPLETO.md
+README-TESTS-INTEGRACION.md
+REFERENCIA-RAPIDA.md
+Descripción del Contexto.txt
+
+# Test files
+src/test/
+
+# Logs
+logs/
+*.log
+
+# Docker files themselves
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Environment files (security)
+.env
+.env.local
+.env.*.local
+
+# Scripts that run in host
+scripts/
+
+# Gradle wrapper scripts (will be in image but selective)
+# gradlew
+# gradlew.bat

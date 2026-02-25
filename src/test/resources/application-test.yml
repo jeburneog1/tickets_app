@@ -1,0 +1,32 @@
+# Test configuration
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration
+      - org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration
+
+aws:
+  region: us-east-1
+  dynamodb:
+    endpoint: http://localhost:8000
+    tables:
+      events: events-test
+      tickets: tickets-test
+      orders: orders-test
+  sqs:
+    endpoint: http://localhost:4566
+    order-processing-queue-url: http://localhost:4566/000000000000/order-processing-test.fifo
+    queues:
+      order-processing: order-processing-test.fifo
+      order-dlq: order-processing-dlq-test.fifo
+
+business:
+  reservation:
+    ttl: 300
+  order:
+    max-tickets: 10
+    max-retries: 3
+  scheduler:
+    reservation-release:
+      enabled: false
+      cron: "0 */5 * * * *"

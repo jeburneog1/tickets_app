@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ticketing Platform – Diagramas Corregidos</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.6.1/mermaid.min.js"></script>
+
+</head>
+<body>
+
+<header>
+  <p>Diagrama de Flujo Completo · Diagrama de Secuencia</p>
+</header>
+
+<!-- ══════════════════════════════════════════
+     DIAGRAMA DE FLUJO — dividido en sub-flujos
+     ══════════════════════════════════════════ -->
+
+<div class="section">
+  <div class="diagram-wrapper">
+    <div class="mermaid">
+flowchart TD
+    U(["👤 Usuario"])
+
+    U -->|"POST /api/events"| A1{"Datos\nválidos?"}
+    A1 -->|"No"| A2["❌ 400 Bad Request"]
+    A1 -->|"Sí"| A3["Guardar Evento en DynamoDB\nInicializar inventario"]
+    A3 --> A4["✅ 201 Created\norderId, capacity"]
+
+    U -->|"GET /api/events"| A5["Listar eventos\nFlux desde DynamoDB"]
+    A5 --> A6["200 OK — lista reactiva"]
+
+    U -->|"GET /api/events/uuid"| A7["Calcular disponibilidad\nTotal - SOLD - RESERVED - PENDING"]
+    A7 --> A8["200 OK — disponibilidad actual"]
+
+        U -->|"GET /api/orders/uuid/"| A9["Calcular estado de la orden \n PENDING - PROCESSING - CONFIRMED - FAILED - CANCELLED"]
+        A9 --> A10["200 OK — disponibilidad actual"]
+
+    U -->|"POST /orders"| B1{"Datos\nválidos?"}
+    B1 -->|"No"| B2["❌ 400 Bad Request"]
+    B1 -->|"Sí"| B3{"Hay entradas\ndisponibles?"}
+    B3 -->|"No"| B4["❌ 409 Conflict\nSin stock"]
+    B3 -->|"Sí"| B5["Optimistic locking en DynamoDB\nAVAILABLE → RESERVED\nTTL = now + 10 min"]
+    B5 -->|"Race condition\notro ganó"| B6{"Reintentos\nagotados?"}
+    B6 -->|"No"| B3
+    B6 -->|"Sí"| B4
+    B5 -->|"Reserva\nexitosa"| B7["Crear Orden\nstatus: RESERVED\nttl: now + 10 min"]
+    B7 --> B8["Publicar mensaje en SQS\northerId, eventId, userId, qty"]
+    B8 --> B9["✅ 202 Accepted\northerId, status: RESERVED"]
+
+    classDef ok fill:#10b981,color:#fff,stroke:#059669
+    classDef err fill:#ef4444,color:#fff,stroke:#dc2626
+    classDef sqs fill:#f59e0b,color:#fff,stroke:#d97706
+    classDef user fill:#a855f7,color:#fff,stroke:#7c3aed
+
+    class A4,A6,A8,B9,A10 ok
+    class A2,B2,B4 err
+    class B8 sqs
+    class U user
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">
+    <div>
+      <h2>Diagrama de Flujo — Flujo 3</h2>
+      <p>Procesamiento Asíncrono — Consumidor SQS</p>
+    </div>
+  </div>
+  <div class="diagram-wrapper">
+    <div class="mermaid">
+flowchart TD
+    SQS[["📨 SQS Queue"]]
+    SQS --> C1["Consumer recibe mensaje"]
+    C1 --> C2{"Orden ya\nprocesada?\nIdempotencia"}
+    C2 -->|"Sí — duplicado"| C3["Delete message SQS ✅"]
+    C2 -->|"No"| C4["Fetch Order from DynamoDB"]
+    C4 --> C5{"Estado\nde la orden"}
+    C5 -->|"Expirada o\ncancelada"| C6["Tickets → AVAILABLE\nOrden → EXPIRED"]
+    C6 --> C3
+    C5 -->|"RESERVED válida"| C7{"Inventario real\naún disponible?"}
+    C7 -->|"No — concurrent\ndepletion"| C8["Orden → FAILED\nTickets → AVAILABLE\nIncrementar inventario"]
+    C8 --> C3
+    C7 -->|"Sí"| C9["Orden → PENDING_CONFIRMATION\nDecrementar inventario"]
+    C9 --> C10{"Confirmar pago\no validación"}
+    C10 -->|"✅ Éxito"| C11["Orden → SOLD ✅ FINAL\nTickets → SOLD ✅ FINAL"]
+    C11 --> C3
+    C10 -->|"❌ Fallo"| C12["Orden → FAILED\nTickets → AVAILABLE\nIncrementar inventario"]
+    C12 --> C3
+
+    classDef ok fill:#10b981,color:#fff,stroke:#059669
+    classDef err fill:#ef4444,color:#fff,stroke:#dc2626
+    classDef sqs fill:#f59e0b,color:#fff,stroke:#d97706
+    classDef proc fill:#5433FF,color:#fff,stroke:#3b1fc0
+
+    class C11 ok
+    class C8,C12 err
+    class SQS,C3 sqs
+    class C9 proc
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">
+    <div>
+      <h2>Diagrama de Flujo — Flujo 4 y 5</h2>
+      <p>Liberación Automática de Reservas Expiradas + Consulta de Estado</p>
+    </div>
+  </div>
+  <div class="diagram-wrapper">
+    <div class="mermaid">
+flowchart TD
+    SCH(["⏰ Scheduler\ncada N minutos"])
+    SCH --> D1["Scan DynamoDB\nReservaciones RESERVED\ncon TTL menor a now"]
+    D1 --> D2{"Hay reservas\nexpiradas?"}
+    D2 -->|"No"| D3["Esperar siguiente ciclo"]
+    D3 --> SCH
+    D2 -->|"Sí"| D4["Para cada reserva expirada"]
+    D4 --> D5["Conditional Write\nTickets RESERVED → AVAILABLE"]
+    D5 --> D6["Orden → EXPIRED"]
+    D6 --> D7["Incrementar available\nen el Evento"]
+    D7 --> D8{"Más reservas\nexpiradas?"}
+    D8 -->|"Sí"| D4
+    D8 -->|"No"| D9["✅ Inventario restaurado"]
+    D9 --> SCH
+
+    U2(["👤 Usuario"])
+    U2 -->|"GET /orders/orderId"| E1["Fetch Order\nMono desde DynamoDB"]
+    E1 --> E2{"Orden\nexiste?"}
+    E2 -->|"No"| E3["❌ 404 Not Found"]
+    E2 -->|"Sí"| E4["✅ 200 OK\northerId, status, tickets, eventId"]
+
+    classDef ok fill:#10b981,color:#fff,stroke:#059669
+    classDef err fill:#ef4444,color:#fff,stroke:#dc2626
+    classDef sched fill:#0ea5e9,color:#fff,stroke:#0284c7
+    classDef user fill:#a855f7,color:#fff,stroke:#7c3aed
+
+    class D9,E4 ok
+    class E3 err
+    class SCH sched
+    class U2 user
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     DIAGRAMA DE SECUENCIA
+     ══════════════════════════════════════════ -->
+
+<div class="section">
+  <div class="section-title">
+    <div>
+      <h2>Diagrama de Secuencia — Flujo 1 y 2</h2>
+      <p>Crear evento + Solicitud de compra con reserva temporal</p>
+    </div>
+  </div>
+  <div class="diagram-wrapper">
+    <div class="mermaid">
+sequenceDiagram
+    autonumber
+    actor User as Usuario
+    participant API as WebFlux API
+    participant UC as Use Cases
+    participant DB as DynamoDB
+    participant SQS as SQS Queue
+
+    Note over User,DB: FLUJO 1 — Crear Evento
+    User->>API: POST /events
+    API->>UC: createEvent(command)
+    UC->>DB: saveEvent + initInventory(capacity)
+    DB-->>UC: eventId
+    UC-->>API: Mono EventResponse
+    API-->>User: 201 Created con eventId y capacity
+
+    Note over User,DB: FLUJO 1 — Consultar Disponibilidad
+    User->>API: GET /events/id/availability
+    API->>UC: getAvailability(eventId)
+    UC->>DB: findEvent + count SOLD RESERVED PENDING
+    DB-->>UC: counts
+    UC-->>API: Mono AvailabilityResponse
+    API-->>User: 200 OK con total y available
+
+    Note over User,SQS: FLUJO 2 — Solicitud de Compra
+    User->>API: POST /orders con eventId userId quantity
+    API->>UC: purchaseTickets(command)
+    UC->>DB: checkAvailability(eventId, quantity)
+    DB-->>UC: available count
+
+    alt Sin stock disponible
+        UC-->>API: InventoryException
+        API-->>User: 409 Conflict sin stock
+    else Stock disponible
+        UC->>DB: conditionalWrite AVAILABLE to RESERVED con TTL 10min
+        alt Race condition — otro ganó
+            DB-->>UC: ConditionalCheckFailedException
+            UC->>UC: Retry con backoff
+            UC-->>API: 409 tras reintentos agotados
+            API-->>User: 409 Conflict
+        else Reserva exitosa
+            DB-->>UC: tickets RESERVED OK
+            UC->>DB: createOrder con status RESERVED y ttl
+            DB-->>UC: orderId
+            UC->>SQS: publish PurchaseOrderMessage
+            SQS-->>UC: messageId
+            UC-->>API: Mono OrderResponse
+            API-->>User: 202 Accepted con orderId y status RESERVED
+        end
+    end
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">
+    <div>
+      <h2>Diagrama de Secuencia — Flujo 3</h2>
+      <p>Procesamiento asíncrono por el Consumidor SQS</p>
+    </div>
+  </div>
+  <div class="diagram-wrapper">
+    <div class="mermaid">
+sequenceDiagram
+    autonumber
+    participant SQS as SQS Queue
+    participant Consumer as Order Consumer
+    participant DB as DynamoDB
+
+    Note over SQS,DB: FLUJO 3 — Procesamiento Asíncrono
+    SQS->>Consumer: pollMessages at-least-once delivery
+    Consumer->>DB: findOrder(orderId)
+    DB-->>Consumer: Order con status RESERVED
+
+    Consumer->>Consumer: Verificar idempotencia por orderId
+
+    alt Orden ya procesada duplicado SQS
+        Consumer->>SQS: deleteMessage OK
+    else Primera vez procesando
+        Consumer->>DB: revalidateInventory(eventId, quantity)
+        DB-->>Consumer: inventory snapshot
+
+        alt Inventario insuficiente concurrent depletion
+            Consumer->>DB: updateOrder a FAILED
+            Consumer->>DB: tickets RESERVED a AVAILABLE
+            Consumer->>DB: incrementAvailable en evento
+            Consumer->>SQS: deleteMessage
+        else Inventario OK
+            Consumer->>DB: updateOrder a PENDING_CONFIRMATION
+            Consumer->>DB: decrementAvailable en evento
+
+            Consumer->>Consumer: Confirmar pago o validacion
+
+            alt Pago exitoso
+                Consumer->>DB: updateOrder a SOLD FINAL
+                Consumer->>DB: updateTickets a SOLD FINAL irreversible
+                Consumer->>SQS: deleteMessage OK
+            else Pago rechazado
+                Consumer->>DB: updateOrder a FAILED
+                Consumer->>DB: tickets PENDING a AVAILABLE
+                Consumer->>DB: incrementAvailable en evento
+                Consumer->>SQS: deleteMessage
+            end
+        end
+    end
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">
+    <div>
+      <h2>Diagrama de Secuencia — Flujo 4 y 5</h2>
+      <p>Scheduler de expiración + Consulta de estado de orden</p>
+    </div>
+  </div>
+  <div class="diagram-wrapper">
+    <div class="mermaid">
+sequenceDiagram
+    autonumber
+    actor User as Usuario
+    participant API as WebFlux API
+    participant UC as Use Cases
+    participant DB as DynamoDB
+    participant Scheduler as Scheduler
+
+    Note over Scheduler,DB: FLUJO 4 — Liberación de Reservas Expiradas
+    loop Cada N minutos
+        Scheduler->>DB: scanExpiredReservations TTL menor a now status RESERVED
+        DB-->>Scheduler: lista de ordenes expiradas
+
+        loop Por cada orden expirada
+            Scheduler->>DB: conditionalWrite tickets RESERVED a AVAILABLE
+            Scheduler->>DB: updateOrder a EXPIRED
+            Scheduler->>DB: incrementAvailable en evento
+        end
+        Note over Scheduler: Inventario restaurado correctamente
+    end
+
+    Note over User,DB: FLUJO 5 — Consulta de Estado de Orden
+    User->>API: GET /orders/orderId
+    API->>UC: getOrderStatus(orderId)
+    UC->>DB: findOrder(orderId)
+
+    alt Orden no existe
+        DB-->>UC: not found
+        UC-->>API: OrderNotFoundException
+        API-->>User: 404 Not Found
+    else Orden encontrada
+        DB-->>UC: Order con todos sus campos
+        UC-->>API: Mono OrderStatusResponse
+        API-->>User: 200 OK con orderId status tickets updatedAt
+    end
+    </div>
+  </div>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    themeVariables: {
+      primaryColor: '#5433FF',
+      primaryTextColor: '#ffffff',
+      primaryBorderColor: '#3b1fc0',
+      lineColor: '#5433FF',
+      secondaryColor: '#FF3CA0',
+      tertiaryColor: '#f0eeff',
+      fontFamily: 'Segoe UI, system-ui, sans-serif',
+      fontSize: '14px'
+    },
+    flowchart: {
+      curve: 'basis',
+      useMaxWidth: false
+    },
+    sequence: {
+      useMaxWidth: false,
+      actorMargin: 80,
+      messageMargin: 40,
+      mirrorActors: false
+    }
+  });
+</script>
+</body>
+</html>

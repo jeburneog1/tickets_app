@@ -1,0 +1,133 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║                  Tickets System Configuration                        ║
+# ║         Reactive Event Ticketing with High Concurrency Support       ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+spring:
+  application:
+    name: ${APP_NAME:tickets-service}
+  
+  # MVC Configuration (for error handling)
+  mvc:
+    throw-exception-if-no-handler-found: true
+  
+  # Web Configuration
+  webflux:
+    base-path: ${API_BASE_PATH:/api}
+
+# Server Configuration
+server:
+  port: ${SERVER_PORT:8080}
+  compression:
+    enabled: ${SERVER_COMPRESSION_ENABLED:true}
+  http2:
+    enabled: ${SERVER_HTTP2_ENABLED:true}
+
+# AWS Configuration
+aws:
+  region: ${AWS_REGION:us-east-1}
+  access-key: ${AWS_ACCESS_KEY_ID:test}
+  secret-key: ${AWS_SECRET_ACCESS_KEY:test}
+  
+  # DynamoDB Configuration
+  dynamodb:
+    endpoint: ${AWS_DYNAMODB_ENDPOINT:http://localhost:8000}
+    region: ${AWS_DYNAMODB_REGION:${aws.region}}
+    access-key: ${AWS_DYNAMODB_ACCESS_KEY:${aws.access-key}}
+    secret-key: ${AWS_DYNAMODB_SECRET_KEY:${aws.secret-key}}
+    tables:
+      events: ${DYNAMODB_TABLE_EVENTS:events}
+      tickets: ${DYNAMODB_TABLE_TICKETS:tickets}
+      orders: ${DYNAMODB_TABLE_ORDERS:orders}
+  
+  # SQS Configuration
+  sqs:
+    endpoint: ${AWS_SQS_ENDPOINT:http://localhost:4566}
+    region: ${AWS_SQS_REGION:${aws.region}}
+    access-key: ${AWS_SQS_ACCESS_KEY:${aws.access-key}}
+    secret-key: ${AWS_SQS_SECRET_KEY:${aws.secret-key}}
+    order-processing-queue-url: ${SQS_ORDER_QUEUE_URL:http://localhost:4566/000000000000/order-processing-queue.fifo}
+    consumer:
+      enabled: ${SQS_CONSUMER_ENABLED:true}
+      max-messages: ${SQS_MAX_MESSAGES:10}
+      wait-time-seconds: ${SQS_WAIT_TIME_SECONDS:20}
+      visibility-timeout-seconds: ${SQS_VISIBILITY_TIMEOUT_SECONDS:30}
+    queue:
+      order-processing: ${SQS_ORDER_QUEUE_NAME:order-processing-queue.fifo}
+      order-processing-dlq: ${SQS_ORDER_DLQ_NAME:order-processing-dlq.fifo}
+
+# Business Configuration
+business:
+  reservation:
+    timeout-minutes: ${RESERVATION_TIMEOUT_MINUTES:10}
+    release-check-interval-ms: ${RESERVATION_RELEASE_CHECK_INTERVAL_MS:60000}
+    release-timeout-seconds: ${RESERVATION_RELEASE_TIMEOUT_SECONDS:30}
+  
+  order:
+    max-retries: ${ORDER_MAX_RETRIES:3}
+    max-tickets-per-order: ${ORDER_MAX_TICKETS:10}
+
+# Logging Configuration
+logging:
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.nequi.tickets: ${LOG_LEVEL_APP:DEBUG}
+    software.amazon.awssdk: ${LOG_LEVEL_AWS:WARN}
+    io.netty: ${LOG_LEVEL_NETTY:WARN}
+    reactor.netty: ${LOG_LEVEL_REACTOR_NETTY:WARN}
+    org.springframework.web: ${LOG_LEVEL_SPRING_WEB:INFO}
+  pattern:
+    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p) %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n%wEx"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: ${LOG_FILE_PATH:logs/tickets-service.log}
+    max-size: ${LOG_FILE_MAX_SIZE:10MB}
+    max-history: ${LOG_FILE_MAX_HISTORY:30}
+
+# Actuator Configuration (Monitoring and Health Checks)
+management:
+  endpoints:
+    web:
+      base-path: ${ACTUATOR_BASE_PATH:/actuator}
+      exposure:
+        include: ${ACTUATOR_ENDPOINTS:health,metrics,info,prometheus}
+  endpoint:
+    health:
+      show-details: ${ACTUATOR_HEALTH_SHOW_DETAILS:always}
+      probes:
+        enabled: ${ACTUATOR_PROBES_ENABLED:true}
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  metrics:
+    export:
+      cloudwatch2:
+        enabled: ${CLOUDWATCH_METRICS_ENABLED:false}
+        namespace: ${CLOUDWATCH_NAMESPACE:TicketsService}
+        step: ${CLOUDWATCH_METRICS_STEP:1m}
+    tags:
+      application: ${spring.application.name}
+      environment: ${ENVIRONMENT:local}
+      region: ${aws.region}
+
+---
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║                      Docker Profile Configuration                    ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+spring:
+  config:
+    activate:
+      on-profile: docker
+
+logging:
+  level:
+    com.nequi.tickets: INFO
+
+aws:
+  dynamodb:
+    endpoint: http://dynamodb-local:8000
+  sqs:
+    endpoint: http://localstack:4566
+

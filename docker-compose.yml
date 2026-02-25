@@ -1,0 +1,157 @@
+services:
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # DynamoDB Local - NoSQL Database
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: tickets-dynamodb
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath /home/dynamodblocal/data"
+    ports:
+      - "8000:8000"
+    volumes:
+      - dynamodb_data:/home/dynamodblocal/data
+    networks:
+      - tickets-network
+    user: "root"
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # LocalStack - AWS Services Emulator (SQS)
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  localstack:
+    image: localstack/localstack:latest
+    container_name: tickets-localstack
+    ports:
+      - "4566:4566"     # LocalStack Gateway
+    environment:
+      - SERVICES=sqs
+      - DEBUG=0
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+    volumes:
+      - localstack_data:/var/lib/localstack
+    networks:
+      - tickets-network
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal sqs list-queues --region us-east-1 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # AWS Infrastructure Initialization
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  aws-init:
+    image: amazon/aws-cli:latest
+    container_name: tickets-aws-init
+    environment:
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+    volumes:
+      - ./scripts:/scripts
+    networks:
+      - tickets-network
+    depends_on:
+      dynamodb-local:
+        condition: service_started
+      localstack:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command: >
+      -c "
+      echo '🚀 Starting AWS infrastructure initialization...' &&
+      chmod +x /scripts/*.sh &&
+      /scripts/init-dynamodb.sh &&
+      /scripts/init-sqs.sh &&
+      echo '✅ AWS infrastructure initialized successfully!'
+      "
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # Tickets Application - Spring Boot WebFlux
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  tickets-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tickets-service:latest
+    container_name: tickets-app
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    environment:
+      # Spring Configuration
+      - SPRING_PROFILES_ACTIVE=docker
+      - SERVER_PORT=${SERVER_PORT:-8080}
+      - API_BASE_PATH=${API_BASE_PATH:-/api}
+      
+      # AWS Configuration
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-test}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
+      
+      # DynamoDB Configuration
+      - AWS_DYNAMODB_ENDPOINT=http://dynamodb-local:8000
+      - DYNAMODB_TABLE_EVENTS=${DYNAMODB_TABLE_EVENTS:-events}
+      - DYNAMODB_TABLE_TICKETS=${DYNAMODB_TABLE_TICKETS:-tickets}
+      - DYNAMODB_TABLE_ORDERS=${DYNAMODB_TABLE_ORDERS:-orders}
+      
+      # SQS Configuration
+      - AWS_SQS_ENDPOINT=http://localstack:4566
+      - SQS_ORDER_QUEUE_URL=http://localstack:4566/000000000000/${SQS_ORDER_QUEUE_NAME:-order-processing-queue.fifo}
+      - SQS_ORDER_QUEUE=${SQS_ORDER_QUEUE_NAME:-order-processing-queue.fifo}
+      - SQS_ORDER_DLQ=${SQS_ORDER_DLQ_NAME:-order-processing-dlq.fifo}
+      - SQS_CONSUMER_ENABLED=${SQS_CONSUMER_ENABLED:-true}
+      - SQS_MAX_MESSAGES=${SQS_MAX_MESSAGES:-10}
+      - SQS_WAIT_TIME_SECONDS=${SQS_WAIT_TIME_SECONDS:-20}
+      - SQS_VISIBILITY_TIMEOUT_SECONDS=${SQS_VISIBILITY_TIMEOUT_SECONDS:-30}
+      
+      # Business Configuration
+      - RESERVATION_TIMEOUT_MINUTES=${RESERVATION_TIMEOUT_MINUTES:-10}
+      - RESERVATION_RELEASE_CHECK_INTERVAL_MS=${RESERVATION_RELEASE_CHECK_INTERVAL_MS:-60000}
+      - RESERVATION_RELEASE_TIMEOUT_SECONDS=${RESERVATION_RELEASE_TIMEOUT_SECONDS:-30}
+      - ORDER_MAX_RETRIES=${ORDER_MAX_RETRIES:-3}
+      - ORDER_MAX_TICKETS=${ORDER_MAX_TICKETS:-10}
+      
+      # Logging Configuration
+      - LOG_LEVEL_ROOT=${LOG_LEVEL_ROOT:-INFO}
+      - LOG_LEVEL_APP=${LOG_LEVEL_APP:-DEBUG}
+      - LOG_LEVEL_AWS=${LOG_LEVEL_AWS:-WARN}
+      - LOG_LEVEL_NETTY=${LOG_LEVEL_NETTY:-WARN}
+      - LOG_LEVEL_REACTOR_NETTY=${LOG_LEVEL_REACTOR_NETTY:-WARN}
+      - LOG_LEVEL_SPRING_WEB=${LOG_LEVEL_SPRING_WEB:-INFO}
+      - LOG_FILE_PATH=
+      
+      # JVM Configuration
+      - JAVA_OPTS=-Xms256m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+    networks:
+      - tickets-network
+    depends_on:
+      aws-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Networks
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+networks:
+  tickets-network:
+    driver: bridge
+    name: tickets-network
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Volumes
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+volumes:
+  dynamodb_data:
+    name: tickets-dynamodb-data
+    driver: local
+  localstack_data:
+    name: tickets-localstack-data
+    driver: local
