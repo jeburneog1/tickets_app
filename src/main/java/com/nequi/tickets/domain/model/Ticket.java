@@ -57,7 +57,6 @@ public record Ticket(
         );
     }
 
-    //:TODO FIX That
     public static Ticket createComplimentaryTicket(String ticketId, String eventId, String customerId) {
         LocalDateTime now = LocalDateTime.now();
         return new Ticket(
